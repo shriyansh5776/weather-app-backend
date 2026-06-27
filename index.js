@@ -1,6 +1,7 @@
 import { configDotenv } from 'dotenv';
 import express, { json } from 'express'
 import mongoose from 'mongoose';
+import userRouter from './routes/user-routes/user.route.js';
 const app = express();
 const PORT = process.env.PORT ||5000
 
@@ -25,3 +26,4 @@ app.get("/",(req,res)=>{
         message : "Welcome to the interface"
     })
 })
+app.use("/api/v1/auth",userRouter)
