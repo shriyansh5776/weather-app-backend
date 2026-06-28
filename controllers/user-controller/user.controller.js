@@ -83,7 +83,7 @@ async function loginUser(req, res) {
         const lockUntil = new Date();
         lockUntil.setMinutes(lockUntil.getMinutes() + 15);
         doesExists.locked_until = lockUntil;
-        await doesExists.save()
+        await doesExists.save();
         return errorResponse(
           res,
           423,
@@ -98,7 +98,7 @@ async function loginUser(req, res) {
       await doesExists.save();
       return errorResponse(res, 403, "Email not verified");
     }
-    const accessToken = jwt.sign(
+    const access_Token = jwt.sign(
       {
         id,
         email,
@@ -106,7 +106,7 @@ async function loginUser(req, res) {
       process.env.MY_SECRET_KEY,
       { expiresIn: "30m" },
     );
-    const refreshToken = jwt.sign(
+    const refresh_Token = jwt.sign(
       {
         id,
         email,
@@ -118,8 +118,8 @@ async function loginUser(req, res) {
     doesExists.locked_until = null;
     await doesExists.save();
     const userResponse = {
-      accessToken,
-      refreshToken,
+      access_Token,
+      refresh_Token,
       expiresIn: "30 minutes",
       user: {
         id,
@@ -136,17 +136,154 @@ async function loginUser(req, res) {
     );
   } catch (error) {
     console.error(error);
-
     return errorResponse(res);
   }
 }
 
-async function logoutUser(req,res) {
+async function logoutUser(req, res) {
   try {
-    
+    return res.sendStatus(204);
   } catch (error) {
-    
+    console.error(error);
+    return errorResponse(res);
   }
 }
 
-export { registerUser, loginUser };
+async function refreshToken(req, res) {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return errorResponse(res, 400, "Refresh token is required");
+    }
+    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+    const { id } = decoded;
+    const user = await Users.findOne({ id });
+    if (!user) {
+      return errorResponse(res, 401, "User not found");
+    }
+    if (!user.email_verified_at) {
+      return errorResponse(res, 403, "Email not verified");
+    }
+    if (user.status !== "active") {
+      return errorResponse(res, 403, "Account not active");
+    }
+    const new_refresh = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+      },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: "7d" },
+    );
+    const new_access = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "30min" },
+    );
+    const userResponse = {
+      access_token: new_access,
+      refresh_token: new_refresh,
+      expires_in: "30m",
+    };
+    return successResponse(
+      res,
+      200,
+      "Tokens refreshed successfully",
+      userResponse,
+    );
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res, 401, "Invalid or expired refresh token");
+  }
+}
+
+async function forgotPassword(req, res) {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return errorResponse(res, 400, "Email is required");
+    }
+    const user = await Users.findOne({ email });
+    if (!user) {
+      return successResponse(
+        res,
+        202,
+        "If an account exists, a password reset email has been sent.",
+      );
+    }
+    if (user.status !== "active") {
+      return successResponse(
+        res,
+        202,
+        "If an account exists, a password reset email has been sent.",
+      );
+    }
+    const reset_token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+      },
+      process.env.PASSWORD_RESET_SECRET,
+      { expiresIn: "5m" },
+    );
+    try {
+      await sendEmail(email, "reset-password", reset_token);
+    } catch (error) {
+      console.error(error);
+    }
+    return successResponse(
+      res,
+      202,
+      "If an account exists, a password reset email has been sent.",
+    );
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res);
+  }
+}
+
+async function resetPassword(req, res) {
+  try {
+    const { token, new_password } = req.body;
+    if (!token || !new_password) {
+      return errorResponse(res, 400, "Bad request");
+    }
+    const decoded = jwt.verify(token, process.env.PASSWORD_RESET_SECRET);
+    const { id } = decoded;
+    const user = await Users.findOne({ id });
+    if (!user) {
+      return errorResponse(res, 400, "Bad request");
+    }
+    if (user.status !== "active") {
+      return errorResponse(res, 400, "Bad request");
+    }
+    const newHashed = await bcrypt.hash(new_password, 10);
+    user.password_hash = newHashed;
+    user.failed_login_count = 0;
+    user.locked_until = null;
+    await user.save();
+    return res.sendStatus(204);
+  } catch (error) {
+    console.error(error);
+    if (
+      error.name === "TokenExpiredError" ||
+      error.name === "JsonWebTokenError"
+    ) {
+      return errorResponse(res, 410, "Token expired or invalid");
+    }
+    return errorResponse(res);
+  }
+}
+
+
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshToken,
+  forgotPassword,
+  resetPassword,
+};
