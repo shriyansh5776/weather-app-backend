@@ -1,15 +1,13 @@
 import { Router } from "express";
-import { forgotPassword, loginUser, logoutUser, refreshToken, registerUser, resetPassword } from "../../controllers/user-controller/user.controller.js";
 import refreshAuth from "../../api/auth/user-auth/user.auth.js";
-
-const userRouter = Router();
-
-userRouter.post("/register", registerUser);
-userRouter.post("/login", loginUser);
-userRouter.post("/logout",refreshAuth,logoutUser)
-userRouter.post("/refresh",refreshToken)
-userRouter.post("/forgot-password",forgotPassword)
-userRouter.post("/reset-password",resetPassword)
+import { changePassword, getMe, getPref, setGetMe } from "../../controllers/user-controller/user.controller.js";
 
 
-export default userRouter;
+const userRouter = Router()
+
+userRouter.get("/me",refreshAuth,getMe)
+userRouter.patch("/me",refreshAuth,setGetMe)
+userRouter.post("/me/change-password",refreshAuth,changePassword)
+userRouter.get("/me/preferences",refreshAuth,getPref)
+
+export default userRouter
