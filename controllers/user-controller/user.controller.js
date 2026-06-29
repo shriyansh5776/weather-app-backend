@@ -1,6 +1,8 @@
 import { errorResponse, successResponse } from "../../utils/Response.js";
+import UserPreferences from "../../validators/preferences.schema.js";
 import Users from "../../validators/users.schema.js";
 import bcrypt from "bcrypt";
+import UserSessions from "../../validators/userSessions.schema.js";
 
 async function getMe(req, res) {
   try {
@@ -90,8 +92,11 @@ async function changePassword(req, res) {
 
 async function getPref(req, res) {
   try {
+    const user_id = req.user.id
+    const myPref = await UserPreferences.findOne({user_id})
+
     return successResponse(res, 200, "Preferences fetched successfully", {
-      preferences: {},
+      preferences: myPref,
     });
   } catch (error) {
     console.error(error);
@@ -99,4 +104,93 @@ async function getPref(req, res) {
   }
 }
 
-export { getMe, setGetMe, changePassword, getPref };
+async function putPrefrences(req, res) {
+  try {
+    const user_id = req.user.id;
+    const {
+      temperature_unit,
+      wind_speed_unit,
+      precipitation_unit,
+      pressure_unit,
+      time_format,
+      language,
+      theme,
+      default_latitude,
+      default_longitude,
+    } = req.body;
+    if (
+      !temperature_unit ||
+      !wind_speed_unit ||
+      !precipitation_unit ||
+      !pressure_unit ||
+      !time_format ||
+      !language ||
+      !theme ||
+      default_latitude === undefined ||
+      default_longitude === undefined
+    ) {
+      return errorResponse(res, 400);
+    }
+
+    const newPref = await UserPreferences.findOneAndUpdate(
+      { user_id },
+      {
+        temperature_unit: temperature_unit,
+        wind_speed_unit: wind_speed_unit,
+        precipitation_unit: precipitation_unit,
+        pressure_unit: pressure_unit,
+        time_format: time_format,
+        language: language,
+        theme: theme,
+        default_latitude: default_latitude,
+        default_longitude: default_longitude,
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+      },
+    );
+    return successResponse(res, 200, "Preference confirmed successfully", {
+      preferences: newPref,
+    });
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res);
+  }
+}
+
+async function getSessions(req, res) {
+  try {
+    const { user_id } = req.user.id;
+
+    const sessions = await UserSessions.find({
+      user_id,
+      revoked_at: null,
+    });
+    if (!sessions) {
+      return errorResponse(res);
+    }
+    if (sessions.revoked_at === null) {
+      return errorResponse(res);
+    }
+    const userResponse = {
+      id:sessions.id,
+      user_agent:sessions.user_agent,
+      ip_address : sessions.ip_address,
+      last_used_at : sessions.last_used_at,
+      expires_at : sessions.expires_at,
+      revoked_at : sessions.revoked_at,
+      created_at : sessions.created_at,
+
+    }
+    successResponse(res, 200, "Sessions fetched successfully", {
+      sessions : userResponse,
+    });
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res);
+  }
+}
+
+export { getMe, setGetMe, changePassword, getPref, putPrefrences, getSessions };
