@@ -3,6 +3,8 @@ import bcrypt from "bcrypt";
 import sendEmail from "../email-controller/email.controller.js";
 import { errorResponse, successResponse } from "../../utils/Response.js";
 import jwt from "jsonwebtoken";
+import UserSessions from "../../validators/userSessions.schema.js";
+import { v4 as uuidv4 } from "uuid";
 
 async function registerUser(req, res) {
   try {
@@ -72,17 +74,14 @@ async function loginUser(req, res) {
     if (!email || !password) {
       return errorResponse(res, 400, "Email and password are required.");
     }
-
     const doesExists = await Users.findOne({ email }).select("+password_hash");
     if (!doesExists) {
       return errorResponse(res, 401, "Invalid credentials");
     }
     if (doesExists.locked_until && doesExists.locked_until > new Date()) {
-      return errorResponse(res, 423, "Login locked try after some time");
+      return errorResponse(res, 423, "Login locked. Try again later.");
     }
-    const pass = doesExists.password_hash;
-    const checkPass = await bcrypt.compare(password, pass);
-
+    const checkPass = await bcrypt.compare(password, doesExists.password_hash);
     if (!checkPass) {
       doesExists.failed_login_count += 1;
       if (doesExists.failed_login_count >= 5) {
@@ -99,27 +98,44 @@ async function loginUser(req, res) {
       await doesExists.save();
       return errorResponse(res, 401, "Invalid credentials");
     }
-    const id = doesExists.id;
     if (!doesExists.email_verified_at) {
-      await doesExists.save();
       return errorResponse(res, 403, "Email not verified");
     }
+    const userId = doesExists.id;
     const access_Token = jwt.sign(
       {
-        id,
+        id: userId,
         email,
       },
-      process.env.MY_SECRET_KEY,
-      { expiresIn: "30m" },
+      process.env.ACCESS_TOKEN_SECRET,
+      {
+        expiresIn: "30m",
+      },
     );
     const refresh_Token = jwt.sign(
       {
-        id,
+        id: userId,
         email,
       },
-      process.env.MY_SECRET_KEY,
-      { expiresIn: "7d" },
+      process.env.REFRESH_TOKEN_SECRET,
+      {
+        expiresIn: "7d",
+      },
     );
+    const sessionId = uuidv4();
+    const tokenFamilyId = uuidv4();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+    await UserSessions.create({
+      user_id: userId,
+      id: sessionId,
+      refresh_token_hash: await bcrypt.hash(refresh_Token, 10),
+      token_family_id: tokenFamilyId,
+      user_agent: req.headers["user-agent"] || "Unknown",
+      ip_address: req.ip,
+      last_used_at: new Date(),
+      expires_at: expiresAt,
+    });
     doesExists.failed_login_count = 0;
     doesExists.locked_until = null;
     await doesExists.save();
@@ -128,7 +144,7 @@ async function loginUser(req, res) {
       refresh_Token,
       expiresIn: "30 minutes",
       user: {
-        id,
+        id: userId,
         email,
         display_name: doesExists.display_name,
         email_verified: !!doesExists.email_verified_at,
@@ -339,8 +355,6 @@ async function resendEmail(req, res) {
   }
 }
 
-
-
 export {
   registerUser,
   loginUser,
@@ -349,5 +363,5 @@ export {
   forgotPassword,
   resetPassword,
   verifyEmail,
-  resendEmail
+  resendEmail,
 };

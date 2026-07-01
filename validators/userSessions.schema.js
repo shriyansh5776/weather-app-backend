@@ -39,10 +39,10 @@ const userSessionsSchema = new mongoose.Schema(
       type: Date,
       required: true,
       validate: {
-        validator() {
-          return this.expires_at > this.created_at;
+        validator(value) {
+          return value > new Date();
         },
-        message: "expires_at must be after created_at",
+        message: "expires_at must be in the future",
       },
     },
     revoked_at: {

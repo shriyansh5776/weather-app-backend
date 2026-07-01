@@ -92,8 +92,8 @@ async function changePassword(req, res) {
 
 async function getPref(req, res) {
   try {
-    const user_id = req.user.id
-    const myPref = await UserPreferences.findOne({user_id})
+    const user_id = req.user.id;
+    const myPref = await UserPreferences.findOne({ user_id });
 
     return successResponse(res, 200, "Preferences fetched successfully", {
       preferences: myPref,
@@ -162,30 +162,28 @@ async function putPrefrences(req, res) {
 
 async function getSessions(req, res) {
   try {
-    const { user_id } = req.user.id;
+    const user_id = req.user.id;
 
     const sessions = await UserSessions.find({
       user_id,
       revoked_at: null,
-    });
-    if (!sessions) {
-      return errorResponse(res);
+    }).sort({ last_used_at: -1 });
+    if (sessions.length === 0) {
+      return successResponse(res, 200, "No active sessions found", {
+        sessions: [],
+      });
     }
-    if (sessions.revoked_at === null) {
-      return errorResponse(res);
-    }
-    const userResponse = {
-      id:sessions.id,
-      user_agent:sessions.user_agent,
-      ip_address : sessions.ip_address,
-      last_used_at : sessions.last_used_at,
-      expires_at : sessions.expires_at,
-      revoked_at : sessions.revoked_at,
-      created_at : sessions.created_at,
-
-    }
-    successResponse(res, 200, "Sessions fetched successfully", {
-      sessions : userResponse,
+    const userResponse = sessions.map((session) => ({
+      id: session.id,
+      user_agent: session.user_agent,
+      ip_address: session.ip_address,
+      last_used_at: session.last_used_at,
+      expires_at: session.expires_at,
+      revoked_at: session.revoked_at,
+      created_at: session.created_at,
+    }));
+    return successResponse(res, 200, "Sessions fetched successfully", {
+      sessions: userResponse,
     });
   } catch (error) {
     console.error(error);
@@ -193,4 +191,34 @@ async function getSessions(req, res) {
   }
 }
 
-export { getMe, setGetMe, changePassword, getPref, putPrefrences, getSessions };
+async function deleteSession(req, res) {
+  try {
+    const { session_id } = req.params;
+    const session = await UserSessions.findOne({
+      id: session_id,
+      user_id: req.user.id,
+    });
+    if (!session) {
+      return errorResponse(res, 404);
+    }
+    if (!!session.revoked_at) {
+      return errorResponse(res, 409);
+    }
+    session.revoked_at = new Date();
+    await session.save();
+    return res.sendStatus(204);
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res, 500);
+  }
+}
+
+export {
+  getMe,
+  setGetMe,
+  changePassword,
+  getPref,
+  putPrefrences,
+  getSessions,
+  deleteSession,
+};
